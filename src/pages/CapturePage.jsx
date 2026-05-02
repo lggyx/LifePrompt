@@ -1,8 +1,9 @@
 /**
  * CapturePage - Content capture hub (text, image, link)
+ * Integrated with real AI service and database persistence
  */
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,25 +11,40 @@ import {
   Link2,
   Type,
   Image,
-  X,
   Sparkles,
   Loader2,
   CheckCircle2,
+  Save,
+  Send,
+  AlertCircle,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import PageTransition from '../components/layout/PageTransition';
 import GlassCard from '../components/ui/GlassCard';
 import NeonButton from '../components/ui/NeonButton';
 import PillTag from '../components/ui/PillTag';
+import MarkdownRenderer from '../components/ui/MarkdownRenderer';
 import { springs } from '../utils/animations';
+import { useAIChat } from '../hooks/useAIChat';
+import useArticleStore from '../stores/useArticleStore';
+import { useToastStore } from '../stores/useToastStore';
 
 function CapturePage() {
   const navigate = useNavigate();
+  const { generateArticle } = useAIChat();
+  const createArticle = useArticleStore((state) => state.createArticle);
+  const toast = useToastStore();
+
   const [mode, setMode] = useState(null); // null | 'text' | 'link' | 'image'
   const [content, setContent] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
+  const [imagePreview, setImagePreview] = useState(null); // base64 data URL
+  const [imageName, setImageName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const fileInputRef = useRef(null);
 
   const captureModes = [
     {
@@ -54,24 +70,107 @@ function CapturePage() {
     },
   ];
 
+  const resetAll = useCallback(() => {
+    setMode(null);
+    setContent('');
+    setLinkUrl('');
+    setImagePreview(null);
+    setImageName('');
+    setResult(null);
+    setError(null);
+  }, []);
+
   const handleProcess = async () => {
     setIsProcessing(true);
-    // Simulate AI processing
-    setTimeout(() => {
+    setError(null);
+
+    try {
+      let rawContent = '';
+      let sourceType = mode;
+
+      if (mode === 'text') {
+        rawContent = content.trim();
+      } else if (mode === 'link') {
+        rawContent = `网页链接：${linkUrl.trim()}`;
+      } else if (mode === 'image') {
+        if (imagePreview) {
+          rawContent = `用户上传了一张名为"${imageName || '未命名图片'}"的图片。请基于图片进行内容分析和文章生成。`;
+        } else {
+          throw new Error('请先选择图片');
+        }
+      }
+
+      if (!rawContent) {
+        throw new Error('内容不能为空');
+      }
+
+      const generated = await generateArticle(rawContent, sourceType);
       setResult({
-        title: 'AI辅助写作的五个关键原则',
-        summary: '本文探讨了如何利用AI工具提升写作效率，同时保持内容的原创性和个人风格。',
-        tags: ['AI', '写作', '效率'],
+        ...generated,
+        sourceType,
+        sourceUrl: mode === 'link' ? linkUrl.trim() : null,
+        screenshotData: mode === 'image' ? imagePreview : null,
       });
+      toast.success('AI 处理完成');
+    } catch (err) {
+      const msg = err.message || 'AI 处理失败';
+      setError(msg);
+      toast.error(msg);
+    } finally {
       setIsProcessing(false);
-    }, 2000);
+    }
   };
 
-  const handleSave = () => {
-    // Save to database
-    navigate('/articles');
+  const handleSave = async (goPublish = false) => {
+    if (!result) return;
+
+    try {
+      const articleId = await createArticle({
+        title: result.title,
+        summary: result.summary,
+        content: result.content,
+        sourceType: result.sourceType ?? 'manual',
+        sourceUrl: result.sourceUrl ?? null,
+        screenshotData: result.screenshotData ?? null,
+        tags: result.tags,
+        aiGeneratedTitle: result.title,
+        aiGeneratedSummary: result.summary,
+      });
+
+      toast.success('已保存到文章库');
+
+      if (goPublish) {
+        navigate(`/publish/${articleId}`);
+      } else {
+        navigate('/articles');
+      }
+    } catch (err) {
+      const msg = err.message || '保存失败';
+      toast.error(msg);
+    }
   };
 
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result);
+      setImageName(file.name);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = () => {
+    setImagePreview(null);
+    setImageName('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // ========== Result View ==========
   if (result) {
     return (
       <PageTransition>
@@ -111,11 +210,11 @@ function CapturePage() {
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.2, ...springs.pop }}
+            transition={{ delay: 0.15, ...springs.pop }}
           >
             <GlassCard style={{ marginBottom: 'var(--space-md)' }}>
               <span className="label-caps" style={{ color: 'var(--outline)', marginBottom: '8px', display: 'block' }}>
-                概述
+                摘要
               </span>
               <p style={{ fontSize: '14px', lineHeight: 1.6, margin: 0 }}>{result.summary}</p>
             </GlassCard>
@@ -124,7 +223,30 @@ function CapturePage() {
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.3, ...springs.pop }}
+            transition={{ delay: 0.2, ...springs.pop }}
+          >
+            <GlassCard style={{ marginBottom: 'var(--space-md)' }}>
+              <span className="label-caps" style={{ color: 'var(--outline)', marginBottom: '8px', display: 'block' }}>
+                正文预览
+              </span>
+              <div
+                style={{
+                  maxHeight: 240,
+                  overflowY: 'auto',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--surface-container-lowest)',
+                  padding: 'var(--space-sm)',
+                }}
+              >
+                <MarkdownRenderer content={result.content} />
+              </div>
+            </GlassCard>
+          </motion.div>
+
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.25, ...springs.pop }}
           >
             <GlassCard style={{ marginBottom: 'var(--space-lg)' }}>
               <span className="label-caps" style={{ color: 'var(--outline)', marginBottom: '8px', display: 'block' }}>
@@ -140,19 +262,30 @@ function CapturePage() {
             </GlassCard>
           </motion.div>
 
-          <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-            <NeonButton variant="ghost" fullWidth onClick={() => setResult(null)}>
-              重新输入
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            style={{ display: 'flex', gap: 'var(--space-sm)', flexDirection: 'column' }}
+          >
+            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+              <NeonButton variant="ghost" fullWidth onClick={() => setResult(null)}>
+                重新输入
+              </NeonButton>
+              <NeonButton variant="primary" fullWidth onClick={() => handleSave(false)} icon={Save}>
+                保存到文章
+              </NeonButton>
+            </div>
+            <NeonButton variant="secondary" fullWidth onClick={() => handleSave(true)} icon={Send}>
+              保存并去发布
             </NeonButton>
-            <NeonButton variant="primary" fullWidth onClick={handleSave}>
-              保存到文章
-            </NeonButton>
-          </div>
+          </motion.div>
         </div>
       </PageTransition>
     );
   }
 
+  // ========== Capture Form ==========
   return (
     <PageTransition>
       <TopBar title="内容捕获" showBack />
@@ -173,12 +306,8 @@ function CapturePage() {
               选择一种方式捕获内容
             </motion.p>
 
-            {captureModes.map((m, i) => (
-              <motion.div
-                key={m.id}
-                variants={springs.STAGGER_ITEM}
-                whileTap={{ scale: 0.97 }}
-              >
+            {captureModes.map((m) => (
+              <motion.div key={m.id} variants={springs.STAGGER_ITEM} whileTap={{ scale: 0.97 }}>
                 <GlassCard
                   onClick={() => setMode(m.id)}
                   glowOnHover
@@ -211,7 +340,7 @@ function CapturePage() {
               </motion.div>
             ))}
 
-            {/* Screenshot shortcut */}
+            {/* Screenshot shortcut placeholder */}
             <motion.div variants={springs.STAGGER_ITEM} whileTap={{ scale: 0.97 }}>
               <GlassCard
                 onClick={() => {}}
@@ -258,6 +387,22 @@ function CapturePage() {
               exit={{ opacity: 0, x: -20 }}
               transition={springs.smooth}
             >
+              {error && (
+                <GlassCard
+                  style={{
+                    marginBottom: 'var(--space-md)',
+                    border: '1px solid var(--error)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-sm)',
+                    padding: 'var(--space-sm) var(--space-md)',
+                  }}
+                >
+                  <AlertCircle size={18} color="var(--error)" />
+                  <span style={{ fontSize: '14px', color: 'var(--error)' }}>{error}</span>
+                </GlassCard>
+              )}
+
               {mode === 'text' && (
                 <>
                   <GlassCard style={{ marginBottom: 'var(--space-md)' }}>
@@ -335,25 +480,79 @@ function CapturePage() {
                   <GlassCard
                     style={{
                       marginBottom: 'var(--space-md)',
-                      minHeight: 200,
+                      minHeight: imagePreview ? 'auto' : 200,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      border: '2px dashed var(--outline-variant)',
+                      justifyContent: imagePreview ? 'flex-start' : 'center',
+                      border: imagePreview ? '1px solid var(--outline-variant)' : '2px dashed var(--outline-variant)',
                       cursor: 'pointer',
+                      padding: imagePreview ? 'var(--space-sm)' : 0,
                     }}
+                    onClick={() => fileInputRef.current?.click()}
                   >
-                    <Image size={48} color="var(--outline)" style={{ marginBottom: 'var(--space-sm)' }} />
-                    <p style={{ color: 'var(--on-surface-variant)', textAlign: 'center' }}>
-                      点击选择图片或拍照<br />
-                      <span style={{ fontSize: '13px' }}>支持 JPG、PNG、WEBP</span>
-                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      style={{ display: 'none' }}
+                      onChange={handleImageSelect}
+                    />
+                    {imagePreview ? (
+                      <div style={{ width: '100%' }}>
+                        <img
+                          src={imagePreview}
+                          alt="Preview"
+                          style={{
+                            width: '100%',
+                            maxHeight: 300,
+                            objectFit: 'cover',
+                            borderRadius: 'var(--radius-md)',
+                            display: 'block',
+                          }}
+                        />
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginTop: 'var(--space-sm)',
+                          }}
+                        >
+                          <span style={{ fontSize: '13px', color: 'var(--on-surface-variant)' }}>
+                            {imageName}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveImage();
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--error)',
+                              fontSize: '13px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            移除
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Image size={48} color="var(--outline)" style={{ marginBottom: 'var(--space-sm)' }} />
+                        <p style={{ color: 'var(--on-surface-variant)', textAlign: 'center' }}>
+                          点击选择图片或拍照<br />
+                          <span style={{ fontSize: '13px' }}>支持 JPG、PNG、WEBP</span>
+                        </p>
+                      </>
+                    )}
                   </GlassCard>
                   <NeonButton
                     variant="primary"
                     fullWidth
-                    disabled={isProcessing}
+                    disabled={!imagePreview || isProcessing}
                     onClick={handleProcess}
                     icon={isProcessing ? Loader2 : Sparkles}
                   >
@@ -364,11 +563,7 @@ function CapturePage() {
 
               <motion.button
                 whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  setMode(null);
-                  setContent('');
-                  setLinkUrl('');
-                }}
+                onClick={resetAll}
                 style={{
                   marginTop: 'var(--space-md)',
                   width: '100%',

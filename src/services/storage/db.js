@@ -162,6 +162,22 @@ export async function initDatabase(seedFn) {
       isActive INTEGER NOT NULL DEFAULT 0,
       createdAt TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS glassesInbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      imageData TEXT NOT NULL,
+      mimeType TEXT NOT NULL DEFAULT 'image/jpeg',
+      title TEXT,
+      summary TEXT,
+      content TEXT,
+      tags TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      uploader TEXT,
+      articleId INTEGER,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (articleId) REFERENCES articles(id) ON DELETE SET NULL
+    );
   `;
 
   _db.run(schema);
@@ -697,5 +713,78 @@ export const aiConfigRepo = {
   setActive(id) {
     run('UPDATE aiConfigs SET isActive = 0');
     run('UPDATE aiConfigs SET isActive = 1 WHERE id = $id', { $id: id });
+  },
+};
+
+// ===== GLASSES INBOX REPOSITORY =====
+export const glassesInboxRepo = {
+  getAll(options = {}) {
+    let sql = 'SELECT * FROM glassesInbox ORDER BY createdAt DESC';
+    const params = {};
+    if (options.limit) {
+      sql += ' LIMIT $limit';
+      params.$limit = options.limit;
+    }
+    if (options.offset) {
+      sql += ' OFFSET $offset';
+      params.$offset = options.offset;
+    }
+    return query(sql, params);
+  },
+
+  getById(id) {
+    return queryOne('SELECT * FROM glassesInbox WHERE id = $id', { $id: id });
+  },
+
+  create(data) {
+    const time = now();
+    run(
+      'INSERT INTO glassesInbox (imageData, mimeType, title, summary, content, tags, status, uploader, createdAt, updatedAt) VALUES ($imageData, $mimeType, $title, $summary, $content, $tags, $status, $uploader, $createdAt, $updatedAt)',
+      {
+        $imageData: data.imageData,
+        $mimeType: data.mimeType ?? 'image/jpeg',
+        $title: data.title ?? null,
+        $summary: data.summary ?? null,
+        $content: data.content ?? null,
+        $tags: Array.isArray(data.tags) ? JSON.stringify(data.tags) : (data.tags ?? null),
+        $status: data.status ?? 'pending',
+        $uploader: data.uploader ?? 'unknown',
+        $createdAt: time,
+        $updatedAt: time,
+      }
+    );
+    const result = queryOne('SELECT last_insert_rowid() as id');
+    return result.id;
+  },
+
+  update(id, data) {
+    const fields = [];
+    const params = { $id: id, $updatedAt: now() };
+
+    if (data.title !== undefined) { fields.push('title = $title'); params.$title = data.title; }
+    if (data.summary !== undefined) { fields.push('summary = $summary'); params.$summary = data.summary; }
+    if (data.content !== undefined) { fields.push('content = $content'); params.$content = data.content; }
+    if (data.tags !== undefined) { fields.push('tags = $tags'); params.$tags = Array.isArray(data.tags) ? JSON.stringify(data.tags) : data.tags; }
+    if (data.status !== undefined) { fields.push('status = $status'); params.$status = data.status; }
+    if (data.articleId !== undefined) { fields.push('articleId = $articleId'); params.$articleId = data.articleId; }
+
+    if (fields.length > 0) {
+      fields.push('updatedAt = $updatedAt');
+      run(`UPDATE glassesInbox SET ${fields.join(', ')} WHERE id = $id`, params);
+    }
+    return id;
+  },
+
+  delete(id) {
+    run('DELETE FROM glassesInbox WHERE id = $id', { $id: id });
+    return id;
+  },
+
+  getPending() {
+    return query("SELECT * FROM glassesInbox WHERE status = 'pending' ORDER BY createdAt DESC");
+  },
+
+  getProcessed() {
+    return query("SELECT * FROM glassesInbox WHERE status IN ('processed','archived') ORDER BY createdAt DESC");
   },
 };

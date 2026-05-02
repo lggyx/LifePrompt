@@ -9,6 +9,7 @@ import ThemeProvider from './components/providers/ThemeProvider';
 import AppShell from './components/layout/AppShell';
 import { initDatabase, articleRepo, aiConfigRepo } from './services/storage/db';
 import { generateMockArticles } from './utils/mockData';
+import { glassesClient } from './services/sync/glassesClient';
 
 // Pages
 import HomePage from './pages/HomePage';
@@ -99,6 +100,15 @@ function AppInitializer({ children }) {
           });
           console.log('[App] Seeded default AI config');
         }
+
+        // Initialize WebSocket connection for glasses inbox
+        // Connection is lazy — only connects when user navigates to /glasses
+        // We expose a global trigger so GlassesInboxPage can initiate
+        window.__initGlassesWS = () => {
+          if (!glassesClient.connected) {
+            glassesClient.connect({ username: 'default', password: '' });
+          }
+        };
       } catch (err) {
         console.error('[App] Database init failed:', err);
       } finally {

@@ -110,6 +110,33 @@ export function useAIChat() {
     [getActiveConfig]
   );
 
+  const generateArticle = useCallback(
+    async (content, sourceType = 'text') => {
+      const config = getActiveConfig();
+      if (!config) throw new Error('未配置 AI 模型');
+      return aiService.generateArticle(config, content, sourceType);
+    },
+    [getActiveConfig]
+  );
+
+  const refine = useCallback(
+    async (selectedText, instruction) => {
+      const config = getActiveConfig();
+      if (!config) throw new Error('未配置 AI 模型');
+      return aiService.refine(config, selectedText, instruction);
+    },
+    [getActiveConfig]
+  );
+
+  const analyzeImage = useCallback(
+    async (base64Image, mimeType = 'image/jpeg') => {
+      const config = getActiveConfig();
+      if (!config) throw new Error('未配置 AI 模型');
+      return aiService.analyzeImage(config, base64Image, mimeType);
+    },
+    [getActiveConfig]
+  );
+
   return {
     messages,
     isLoading,
@@ -121,6 +148,9 @@ export function useAIChat() {
     generateSummary,
     generateTags,
     publishFormat,
+    generateArticle,
+    refine,
+    analyzeImage,
     resetError,
   };
 }

@@ -115,6 +115,83 @@ ${articleContext}
 3. 使用 Markdown 格式
 4. 保持专业但有亲和力的语气`;
   },
+
+  generateArticle: (content, sourceType, profile) => `
+请根据以下${sourceType === 'link' ? '网页链接内容' : sourceType === 'image' ? '图片内容描述' : '文本内容'}，生成一篇完整的文章，并以严格JSON格式返回。
+
+用户画像：
+- 风格：${profile?.style || 'analytical'}
+- 语气：${profile?.tone || 'professional'}
+- 标题长度偏好：${profile?.preferredTitleLength || 'medium'}
+- 概述长度偏好：${profile?.preferredSummaryLength || 'short'}
+- 常用表达：${(profile?.favoriteExpressions || []).join(', ') || '无'}
+- 忌讳词汇：${(profile?.avoidWords || []).join(', ') || '无'}
+
+要求：
+1. 标题简洁有力，能准确概括内容核心
+2. 摘要2-3句话，包含核心观点和行动建议
+3. 正文内容基于原始输入进行扩展，结构清晰，使用 Markdown 格式
+4. 推荐3-5个标签，优先使用语义明确的词汇
+5. 符合用户画像风格与语气
+6. 严格按以下JSON格式返回，不要添加任何其他解释或 markdown 代码块包裹
+
+{
+  "title": "文章标题",
+  "summary": "文章摘要",
+  "content": "正文内容（Markdown格式）",
+  "tags": ["标签1", "标签2", "标签3"]
+}
+
+原始内容：
+${content}`,
+
+  refine: (selectedText, instruction, profile) => `
+请根据用户的修改指令，对以下段落进行改写。
+
+用户画像：
+- 风格：${profile?.style || 'analytical'}
+- 语气：${profile?.tone || 'professional'}
+- 常用表达：${(profile?.favoriteExpressions || []).join(', ') || '无'}
+- 忌讳词汇：${(profile?.avoidWords || []).join(', ') || '无'}
+
+修改指令：${instruction}
+
+原文段落：
+${selectedText}
+
+要求：
+1. 只返回改写后的段落文本
+2. 不要添加任何解释、前缀或后缀
+3. 保持 Markdown 格式一致
+4. 符合用户画像风格与语气`,
+
+analyzeImage: (profile) => `
+请分析这张图片的内容，生成一篇知识笔记，并以严格JSON格式返回。
+
+用户画像：
+- 风格：${profile?.style || 'analytical'}
+- 语气：${profile?.tone || 'professional'}
+- 标题长度偏好：${profile?.preferredTitleLength || 'medium'}
+- 概述长度偏好：${profile?.preferredSummaryLength || 'short'}
+- 常用表达：${(profile?.favoriteExpressions || []).join(', ') || '无'}
+- 忌讳词汇：${(profile?.avoidWords || []).join(', ') || '无'}
+
+要求：
+1. title：简洁有力、准确概括图片核心内容的标题
+2. summary：2-3句话，描述图片中的关键信息和价值
+3. content：对图片内容的详细解读和延伸思考，使用 Markdown 格式，可以包含：
+ - 图片中可见的关键元素描述
+ - 你的理解和联想
+ -  actionable 的后续建议或笔记
+4. tags：3-5个标签，反映图片主题和内容类型
+5. 严格按以下JSON格式返回，不要添加任何其他解释或 markdown 代码块包裹
+
+{
+"title": "笔记标题",
+"summary": "笔记摘要",
+"content": "详细内容（Markdown格式）",
+"tags": ["标签1", "标签2", "标签3"]
+}`,
 };
 
 export default PROMPT_TEMPLATES;
