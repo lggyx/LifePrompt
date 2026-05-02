@@ -15,6 +15,7 @@ import {
   Info,
   ChevronRight,
   LogOut,
+  Newspaper,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import PageTransition from '../components/layout/PageTransition';
@@ -37,6 +38,7 @@ const settingsGroups = [
       { icon: Cloud, label: '云备份', path: '/settings/cloud', color: 'var(--primary)' },
       { icon: Wifi, label: '局域网备份', path: '/settings/lan', color: 'var(--secondary)' },
       { icon: Database, label: '存储管理', path: '/settings/storage', color: 'var(--tertiary)' },
+      { icon: Newspaper, label: '媒体账号', path: '/settings/media', color: 'var(--primary)' },
     ],
   },
   {

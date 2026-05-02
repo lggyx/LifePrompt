@@ -21,6 +21,7 @@ export const ROUTES = {
   SETTINGS_CLOUD: '/settings/cloud',
   SETTINGS_LAN: '/settings/lan',
   SETTINGS_STORAGE: '/settings/storage',
+  SETTINGS_MEDIA: '/settings/media',
   PUBLISH: '/publish/:id',
   ONBOARDING: '/onboarding',
   USER_PROFILE: '/onboarding/profile',
@@ -143,10 +144,53 @@ export const SYNC_STATUS = {
 // ===== PUBLISH PLATFORMS =====
 export const PUBLISH_PLATFORMS = {
   WECHAT: 'wechat',
+  XIAOHONGSHU: 'xiaohongshu',
+  WEIBO: 'weibo',
+  ZHIHU: 'zhihu',
+  JUEJIN: 'juejin',
+  CUSTOM: 'custom',
 };
 
 export const PUBLISH_PLATFORM_LABELS = {
   [PUBLISH_PLATFORMS.WECHAT]: '微信公众号',
+  [PUBLISH_PLATFORMS.XIAOHONGSHU]: '小红书',
+  [PUBLISH_PLATFORMS.WEIBO]: '微博',
+  [PUBLISH_PLATFORMS.ZHIHU]: '知乎',
+  [PUBLISH_PLATFORMS.JUEJIN]: '掘金',
+  [PUBLISH_PLATFORMS.CUSTOM]: '自定义',
+};
+
+export const MEDIA_ACCOUNT_FIELDS = {
+  [PUBLISH_PLATFORMS.WECHAT]: [
+    { key: 'appId', label: 'AppID', type: 'text', required: true },
+    { key: 'appSecret', label: 'AppSecret', type: 'password', required: true },
+    { key: 'accessToken', label: 'Access Token', type: 'password', required: false },
+  ],
+  [PUBLISH_PLATFORMS.XIAOHONGSHU]: [
+    { key: 'appId', label: 'Client ID', type: 'text', required: true },
+    { key: 'appSecret', label: 'Client Secret', type: 'password', required: true },
+    { key: 'accessToken', label: 'Access Token', type: 'password', required: false },
+  ],
+  [PUBLISH_PLATFORMS.WEIBO]: [
+    { key: 'appId', label: 'App Key', type: 'text', required: true },
+    { key: 'appSecret', label: 'App Secret', type: 'password', required: true },
+    { key: 'accessToken', label: 'Access Token', type: 'password', required: false },
+  ],
+  [PUBLISH_PLATFORMS.ZHIHU]: [
+    { key: 'appId', label: 'Client ID', type: 'text', required: true },
+    { key: 'appSecret', label: 'Client Secret', type: 'password', required: true },
+    { key: 'accessToken', label: 'Access Token', type: 'password', required: false },
+  ],
+  [PUBLISH_PLATFORMS.JUEJIN]: [
+    { key: 'appId', label: 'Client ID', type: 'text', required: true },
+    { key: 'appSecret', label: 'Client Secret', type: 'password', required: true },
+    { key: 'accessToken', label: 'Access Token', type: 'password', required: false },
+  ],
+  [PUBLISH_PLATFORMS.CUSTOM]: [
+    { key: 'appId', label: 'API Key', type: 'text', required: false },
+    { key: 'appSecret', label: 'API Secret', type: 'password', required: false },
+    { key: 'accessToken', label: 'Token', type: 'password', required: false },
+  ],
 };
 
 // ===== ANIMATION CONSTANTS =====

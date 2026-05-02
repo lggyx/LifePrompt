@@ -1,6 +1,7 @@
 /**
  * PublishPage - One-click article publishing workflow
- * Integrated with real AI publishFormat, Markdown preview, editing, and AI refine dialog
+ * Integrated with real AI publishFormat, Markdown preview, editing, AI refine dialog,
+ * and media account selection from SQLite.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -15,6 +16,8 @@ import {
   Wand2,
   X,
   Sparkles,
+  ChevronDown,
+  ShieldAlert,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import PageTransition from '../components/layout/PageTransition';
@@ -26,6 +29,29 @@ import { springs } from '../utils/animations';
 import { useAIChat } from '../hooks/useAIChat';
 import useArticleStore from '../stores/useArticleStore';
 import { useToastStore } from '../stores/useToastStore';
+import { mediaAccountsRepo } from '../services/storage/db';
+import {
+  PUBLISH_PLATFORMS,
+  PUBLISH_PLATFORM_LABELS,
+} from '../utils/constants';
+
+const PLATFORM_ICONS = {
+  [PUBLISH_PLATFORMS.WECHAT]: '📱',
+  [PUBLISH_PLATFORMS.XIAOHONGSHU]: '📕',
+  [PUBLISH_PLATFORMS.WEIBO]: '📢',
+  [PUBLISH_PLATFORMS.ZHIHU]: '💡',
+  [PUBLISH_PLATFORMS.JUEJIN]: '⚡',
+  [PUBLISH_PLATFORMS.CUSTOM]: '🔧',
+};
+
+const PLATFORM_COLORS = {
+  [PUBLISH_PLATFORMS.WECHAT]: '#07C160',
+  [PUBLISH_PLATFORMS.XIAOHONGSHU]: '#FF2442',
+  [PUBLISH_PLATFORMS.WEIBO]: '#E6162D',
+  [PUBLISH_PLATFORMS.ZHIHU]: '#0084FF',
+  [PUBLISH_PLATFORMS.JUEJIN]: '#1E80FF',
+  [PUBLISH_PLATFORMS.CUSTOM]: 'var(--outline)',
+};
 
 function PublishPage() {
   const { id } = useParams();
@@ -47,7 +73,13 @@ function PublishPage() {
   const [showRefineButton, setShowRefineButton] = useState(false);
   const [refineButtonPos, setRefineButtonPos] = useState({ x: 0, y: 0 });
 
+  // Media accounts
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccountId, setSelectedAccountId] = useState(null);
+  const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+
   const textareaRef = useRef(null);
+  const accountDropdownRef = useRef(null);
 
   // Load article and generate publish format on mount
   useEffect(() => {
@@ -55,6 +87,18 @@ function PublishPage() {
 
     async function init() {
       try {
+        // Load media accounts
+        try {
+          const rows = mediaAccountsRepo.getActive();
+          const parsed = rows.map((r) => ({ ...r, isActive: r.isActive === 1 }));
+          setAccounts(parsed);
+          if (parsed.length > 0 && !selectedAccountId) {
+            setSelectedAccountId(parsed[0].id);
+          }
+        } catch (e) {
+          console.warn('[PublishPage] load accounts failed:', e);
+        }
+
         const article = getArticleById(Number(id));
         if (!article) {
           throw new Error('文章不存在');
@@ -63,7 +107,9 @@ function PublishPage() {
         setEditedContent(article.content || '');
         setStep('generating');
 
-        const formatted = await publishFormat(article, 'wechat');
+        const account = accounts.find((a) => a.id === selectedAccountId);
+        const platform = account?.platform || 'wechat';
+        const formatted = await publishFormat(article, platform);
         if (cancelled) return;
 
         setEditedContent(formatted);
@@ -80,6 +126,17 @@ function PublishPage() {
     init();
     return () => { cancelled = true; };
   }, [id, getArticleById, publishFormat]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target)) {
+        setShowAccountDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Handle text selection in textarea
   const handleTextareaMouseUp = useCallback((e) => {
@@ -126,12 +183,34 @@ function PublishPage() {
     }
   };
 
+  const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
+
   const handlePublish = () => {
+    if (accounts.length > 0 && !selectedAccountId) {
+      useToastStore.getState().error('请先选择一个发布账号');
+      return;
+    }
     setStep('publishing');
     setTimeout(() => {
       setStep('success');
       useToastStore.getState().success('发布成功');
     }, 2000);
+  };
+
+  const handleRegenerate = async () => {
+    setStep('generating');
+    try {
+      const article = getArticleById(Number(id));
+      const account = accounts.find((a) => a.id === selectedAccountId);
+      const platform = account?.platform || 'wechat';
+      const formatted = await publishFormat(article, platform);
+      setEditedContent(formatted);
+      setStep('preview');
+      useToastStore.getState().success('已根据新平台重新生成');
+    } catch (err) {
+      setStep('preview');
+      useToastStore.getState().error(err.message || '重新生成失败');
+    }
   };
 
   if (step === 'loading') {
@@ -179,7 +258,7 @@ function PublishPage() {
             AI 正在改写发布内容...
           </h3>
           <p style={{ fontSize: '14px', color: 'var(--on-surface-variant)' }}>
-            正在根据微信公众号风格改写
+            正在根据{selectedAccount ? PUBLISH_PLATFORM_LABELS[selectedAccount.platform] : '微信公众号'}风格改写
           </p>
         </div>
       </PageTransition>
@@ -230,7 +309,9 @@ function PublishPage() {
           >
             <Send size={48} color="var(--primary)" />
           </motion.div>
-          <h3 style={{ marginTop: 'var(--space-lg)' }}>正在发布到微信公众号...</h3>
+          <h3 style={{ marginTop: 'var(--space-lg)' }}>
+            正在发布到{selectedAccount ? PUBLISH_PLATFORM_LABELS[selectedAccount.platform] : '微信公众号'}...
+          </h3>
         </div>
       </PageTransition>
     );
@@ -269,8 +350,8 @@ function PublishPage() {
             transition={{ delay: 0.3 }}
             style={{ textAlign: 'center', marginBottom: 'var(--space-xl)' }}
           >
-            文章已成功发布到微信公众号<br />
-            你可以在公众号后台查看
+            文章已成功发布到{selectedAccount ? PUBLISH_PLATFORM_LABELS[selectedAccount.platform] : '微信公众号'}<br />
+            你可以在平台后台查看
           </motion.p>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -416,7 +497,7 @@ function PublishPage() {
           </GlassCard>
         </motion.div>
 
-        {/* Platform */}
+        {/* Platform & Account Selection */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -424,14 +505,161 @@ function PublishPage() {
         >
           <GlassCard style={{ marginBottom: 'var(--space-lg)' }}>
             <span className="label-caps" style={{ color: 'var(--outline)', marginBottom: '8px', display: 'block' }}>
-              发布平台
+              发布平台与账号
             </span>
-            <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
-              <PillTag selected>微信公众号</PillTag>
-              <span style={{ fontSize: '13px', color: 'var(--on-surface-variant)' }}>
-                更多平台即将支持...
-              </span>
-            </div>
+
+            {accounts.length === 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0' }}>
+                <ShieldAlert size={20} color="var(--outline)" />
+                <span style={{ fontSize: '14px', color: 'var(--on-surface-variant)' }}>
+                  尚未配置媒体账号，
+                </span>
+                <button
+                  onClick={() => navigate('/settings/media')}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--primary)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: 0,
+                    textDecoration: 'underline',
+                  }}
+                >
+                  去设置
+                </button>
+              </div>
+            ) : (
+              <div style={{ position: 'relative' }} ref={accountDropdownRef}>
+                <button
+                  onClick={() => setShowAccountDropdown((prev) => !prev)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-sm)',
+                    padding: '10px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--outline-variant)',
+                    background: 'var(--surface-container-lowest)',
+                    color: 'var(--on-surface)',
+                    fontSize: '14px',
+                    fontFamily: 'var(--font-body)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  {selectedAccount ? (
+                    <>
+                      <span style={{ fontSize: '18px' }}>
+                        {PLATFORM_ICONS[selectedAccount.platform]}
+                      </span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600 }}>{selectedAccount.name}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--on-surface-variant)' }}>
+                          {PUBLISH_PLATFORM_LABELS[selectedAccount.platform]}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <span style={{ color: 'var(--on-surface-variant)' }}>选择发布账号...</span>
+                  )}
+                  <ChevronDown
+                    size={18}
+                    color="var(--outline)"
+                    style={{
+                      transform: showAccountDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s',
+                    }}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {showAccountDropdown && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 4px)',
+                        left: 0,
+                        right: 0,
+                        background: 'var(--surface)',
+                        border: '1px solid var(--outline-variant)',
+                        borderRadius: 'var(--radius-lg)',
+                        boxShadow: 'var(--elevation-2)',
+                        zIndex: 50,
+                        maxHeight: 240,
+                        overflowY: 'auto',
+                      }}
+                    >
+                      {accounts.map((account) => (
+                        <button
+                          key={account.id}
+                          onClick={() => {
+                            setSelectedAccountId(account.id);
+                            setShowAccountDropdown(false);
+                          }}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-sm)',
+                            padding: '10px var(--space-md)',
+                            background: selectedAccountId === account.id ? 'var(--primary-container)' : 'transparent',
+                            border: 'none',
+                            borderBottom: '1px solid var(--outline-variant)',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            color: 'var(--on-surface)',
+                            fontSize: '14px',
+                            fontFamily: 'var(--font-body)',
+                          }}
+                        >
+                          <span style={{ fontSize: '18px' }}>{PLATFORM_ICONS[account.platform]}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600 }}>{account.name}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--on-surface-variant)' }}>
+                              {PUBLISH_PLATFORM_LABELS[account.platform]}
+                              {account.appId ? ` · ${account.appId}` : ''}
+                            </div>
+                          </div>
+                          {selectedAccountId === account.id && (
+                            <CheckCircle2 size={16} color="var(--primary)" />
+                          )}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {selectedAccount && (
+              <div style={{ marginTop: 'var(--space-sm)', display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+                <PillTag selected>
+                  {PUBLISH_PLATFORM_LABELS[selectedAccount.platform]}
+                </PillTag>
+                <button
+                  onClick={handleRegenerate}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--primary)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 0',
+                  }}
+                >
+                  <Sparkles size={14} /> 按此平台风格重新生成
+                </button>
+              </div>
+            )}
           </GlassCard>
         </motion.div>
 

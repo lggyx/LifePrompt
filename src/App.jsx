@@ -29,6 +29,7 @@ import CloudBackupPage from './pages/CloudBackupPage';
 import StoragePage from './pages/StoragePage';
 import LANBackupPage from './pages/LANBackupPage';
 import SearchPage from './pages/SearchPage';
+import MediaAccountsPage from './pages/MediaAccountsPage';
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -50,6 +51,7 @@ function AnimatedRoutes() {
         <Route path="/settings/cloud" element={<CloudBackupPage />} />
         <Route path="/settings/lan" element={<LANBackupPage />} />
         <Route path="/settings/storage" element={<StoragePage />} />
+        <Route path="/settings/media" element={<MediaAccountsPage />} />
         <Route path="/publish/:id" element={<PublishPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/onboarding/profile" element={<UserProfilePage />} />

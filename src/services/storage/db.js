@@ -178,6 +178,20 @@ export async function initDatabase(seedFn) {
       updatedAt TEXT NOT NULL,
       FOREIGN KEY (articleId) REFERENCES articles(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS mediaAccounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform TEXT NOT NULL,
+      name TEXT NOT NULL,
+      appId TEXT,
+      appSecret TEXT,
+      accessToken TEXT,
+      refreshToken TEXT,
+      extra TEXT,
+      isActive INTEGER NOT NULL DEFAULT 1,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
   `;
 
   _db.run(schema);
@@ -786,5 +800,89 @@ export const glassesInboxRepo = {
 
   getProcessed() {
     return query("SELECT * FROM glassesInbox WHERE status IN ('processed','archived') ORDER BY createdAt DESC");
+  },
+};
+
+// ===== MEDIA ACCOUNTS REPOSITORY =====
+export const mediaAccountsRepo = {
+  getAll(options = {}) {
+    let sql = 'SELECT * FROM mediaAccounts ORDER BY updatedAt DESC';
+    const params = {};
+    if (options.limit) {
+      sql += ' LIMIT $limit';
+      params.$limit = options.limit;
+    }
+    if (options.offset) {
+      sql += ' OFFSET $offset';
+      params.$offset = options.offset;
+    }
+    return query(sql, params);
+  },
+
+  getById(id) {
+    return queryOne('SELECT * FROM mediaAccounts WHERE id = $id', { $id: id });
+  },
+
+  getByPlatform(platform) {
+    return query('SELECT * FROM mediaAccounts WHERE platform = $platform ORDER BY updatedAt DESC', { $platform: platform });
+  },
+
+  getActive() {
+    return query('SELECT * FROM mediaAccounts WHERE isActive = 1 ORDER BY updatedAt DESC');
+  },
+
+  create(data) {
+    const time = now();
+    run(
+      'INSERT INTO mediaAccounts (platform, name, appId, appSecret, accessToken, refreshToken, extra, isActive, createdAt, updatedAt) VALUES ($platform, $name, $appId, $appSecret, $accessToken, $refreshToken, $extra, $isActive, $createdAt, $updatedAt)',
+      {
+        $platform: data.platform,
+        $name: data.name,
+        $appId: data.appId ?? null,
+        $appSecret: data.appSecret ?? null,
+        $accessToken: data.accessToken ?? null,
+        $refreshToken: data.refreshToken ?? null,
+        $extra: data.extra ? JSON.stringify(data.extra) : null,
+        $isActive: data.isActive !== undefined ? (data.isActive ? 1 : 0) : 1,
+        $createdAt: time,
+        $updatedAt: time,
+      }
+    );
+    const result = queryOne('SELECT last_insert_rowid() as id');
+    return result.id;
+  },
+
+  update(id, data) {
+    const fields = [];
+    const params = { $id: id, $updatedAt: now() };
+
+    if (data.platform !== undefined) { fields.push('platform = $platform'); params.$platform = data.platform; }
+    if (data.name !== undefined) { fields.push('name = $name'); params.$name = data.name; }
+    if (data.appId !== undefined) { fields.push('appId = $appId'); params.$appId = data.appId; }
+    if (data.appSecret !== undefined) { fields.push('appSecret = $appSecret'); params.$appSecret = data.appSecret; }
+    if (data.accessToken !== undefined) { fields.push('accessToken = $accessToken'); params.$accessToken = data.accessToken; }
+    if (data.refreshToken !== undefined) { fields.push('refreshToken = $refreshToken'); params.$refreshToken = data.refreshToken; }
+    if (data.extra !== undefined) { fields.push('extra = $extra'); params.$extra = data.extra ? JSON.stringify(data.extra) : null; }
+    if (data.isActive !== undefined) { fields.push('isActive = $isActive'); params.$isActive = data.isActive ? 1 : 0; }
+
+    if (fields.length > 0) {
+      fields.push('updatedAt = $updatedAt');
+      run(`UPDATE mediaAccounts SET ${fields.join(', ')} WHERE id = $id`, params);
+    }
+    return id;
+  },
+
+  delete(id) {
+    run('DELETE FROM mediaAccounts WHERE id = $id', { $id: id });
+    return id;
+  },
+
+  setActive(id, isActive) {
+    run('UPDATE mediaAccounts SET isActive = $isActive, updatedAt = $updatedAt WHERE id = $id', {
+      $id: id,
+      $isActive: isActive ? 1 : 0,
+      $updatedAt: now(),
+    });
+    return id;
   },
 };
