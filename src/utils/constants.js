@@ -75,6 +75,8 @@ export const AI_PROVIDERS = {
   OPENAI: 'openai',
   CLAUDE: 'claude',
   QIANWEN: 'qianwen',
+  KIMI: 'kimi',
+  CUSTOM: 'custom',
 };
 
 export const AI_PROVIDER_CONFIGS = {
@@ -98,6 +100,20 @@ export const AI_PROVIDER_CONFIGS = {
     models: ['qwen-vl-max', 'qwen-max', 'qwen-plus'],
     defaultModel: 'qwen-vl-max',
     supportsVision: true,
+  },
+  [AI_PROVIDERS.KIMI]: {
+    name: 'Kimi',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+    defaultModel: 'moonshot-v1-8k',
+    supportsVision: false,
+  },
+  [AI_PROVIDERS.CUSTOM]: {
+    name: '自定义',
+    baseUrl: '',
+    models: [],
+    defaultModel: '',
+    supportsVision: false,
   },
 };
 

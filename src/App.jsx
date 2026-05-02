@@ -1,11 +1,14 @@
 /**
- * App.jsx - Root component with routing and theme
+ * App.jsx - Root component with routing, theme, and DB initialization
  */
 
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import ThemeProvider from './components/providers/ThemeProvider';
 import AppShell from './components/layout/AppShell';
+import { initDatabase, articleRepo, aiConfigRepo } from './services/storage/db';
+import { generateMockArticles } from './utils/mockData';
 
 // Pages
 import HomePage from './pages/HomePage';
@@ -54,13 +57,99 @@ function AnimatedRoutes() {
   );
 }
 
+function AppInitializer({ children }) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    async function init() {
+      try {
+        await initDatabase(async () => {
+          // Seed mock articles if database is empty
+          const mockArticles = generateMockArticles(15);
+          mockArticles.forEach((article) => {
+            articleRepo.create(article);
+          });
+          console.log('[App] Seeded mock articles');
+        });
+
+        // Detect old-format articles and re-seed for development
+        const existing = articleRepo.getAll({ limit: 1 });
+        const needsReseed = existing.length > 0 && existing[0].content?.includes('这是一段更详细的文章内容');
+        if (needsReseed) {
+          const all = articleRepo.getAll();
+          all.forEach((a) => articleRepo.delete(a.id));
+          const mockArticles = generateMockArticles(15);
+          mockArticles.forEach((article) => {
+            articleRepo.create(article);
+          });
+          console.log('[App] Reseeded with rich Markdown content');
+        }
+
+        // Seed default AI config if none exists
+        const configs = aiConfigRepo.getAll();
+        if (configs.length === 0) {
+          aiConfigRepo.create({
+            provider: 'qianwen',
+            name: '通义千问 Debug',
+            apiKey: 'sk-0580391084fc4487bb91c49ebd03dddc',
+            baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+            model: 'qwen3.5-flash',
+            temperature: 0.7,
+            isActive: 1,
+          });
+          console.log('[App] Seeded default AI config');
+        }
+      } catch (err) {
+        console.error('[App] Database init failed:', err);
+      } finally {
+        setReady(true);
+      }
+    }
+    init();
+  }, []);
+
+  if (!ready) {
+    return (
+      <div
+        style={{
+          height: '100dvh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--surface)',
+          color: 'var(--on-surface)',
+        }}
+      >
+        <div style={{ textAlign: 'center' }}>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              border: '3px solid var(--primary-container)',
+              borderTopColor: 'var(--primary)',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto 16px',
+            }}
+          />
+          <p style={{ fontSize: '14px', color: 'var(--on-surface-variant)' }}>初始化数据库...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return children;
+}
+
 function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
-        <AppShell>
-          <AnimatedRoutes />
-        </AppShell>
+        <AppInitializer>
+          <AppShell>
+            <AnimatedRoutes />
+          </AppShell>
+        </AppInitializer>
       </ThemeProvider>
     </BrowserRouter>
   );

@@ -33,6 +33,8 @@ export const useToastStore = create((set, get) => ({
   error: (message, duration) => get().addToast(message, 'error', duration),
   warning: (message, duration) => get().addToast(message, 'warning', duration),
   info: (message, duration) => get().addToast(message, 'info', duration),
+
+  show: (message, type = 'info', duration = 3000) => get().addToast(message, type, duration),
 }));
 
 export default useToastStore;

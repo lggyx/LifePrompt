@@ -1,8 +1,9 @@
 /**
  * AIConfigPage - AI model configuration (OpenAI / Claude / Qianwen)
+ * Connected to SQLite via useAIStore
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -21,23 +22,17 @@ import GlassCard from '../components/ui/GlassCard';
 import NeonButton from '../components/ui/NeonButton';
 import { AI_PROVIDERS, AI_PROVIDER_CONFIGS } from '../utils/constants';
 import { springs, listContainerVariants, listItemVariants } from '../utils/animations';
+import useAIStore from '../stores/useAIStore';
+import { aiService } from '../services/ai';
+import useToastStore from '../stores/useToastStore';
 
 function AIConfigPage() {
-  const [configs, setConfigs] = useState([
-    {
-      id: '1',
-      provider: AI_PROVIDERS.OPENAI,
-      name: 'OpenAI GPT-4o',
-      apiKey: '',
-      baseUrl: AI_PROVIDER_CONFIGS[AI_PROVIDERS.OPENAI].baseUrl,
-      model: AI_PROVIDER_CONFIGS[AI_PROVIDERS.OPENAI].defaultModel,
-      temperature: 0.7,
-      isActive: true,
-      isExpanded: false,
-      isTesting: false,
-      testStatus: null,
-    },
-  ]);
+  const { configs, loadConfigs, addConfig, updateConfig, deleteConfig, setActiveConfig } = useAIStore();
+  const toast = useToastStore();
+
+  const [expandedId, setExpandedId] = useState(null);
+  const [testingId, setTestingId] = useState(null);
+  const [testStatus, setTestStatus] = useState({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [newConfig, setNewConfig] = useState({
     provider: AI_PROVIDERS.OPENAI,
@@ -48,51 +43,43 @@ function AIConfigPage() {
     temperature: 0.7,
   });
 
+  useEffect(() => {
+    loadConfigs();
+  }, [loadConfigs]);
+
   const toggleExpand = (id) => {
-    setConfigs((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isExpanded: !c.isExpanded } : c))
-    );
+    setExpandedId((prev) => (prev === id ? null : id));
   };
 
-  const setActive = (id) => {
-    setConfigs((prev) =>
-      prev.map((c) => ({ ...c, isActive: c.id === id }))
-    );
-  };
-
-  const handleTest = (id) => {
-    setConfigs((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isTesting: true, testStatus: null } : c))
-    );
-    setTimeout(() => {
-      setConfigs((prev) =>
-        prev.map((c) =>
-          c.id === id ? { ...c, isTesting: false, testStatus: Math.random() > 0.3 ? 'success' : 'error' } : c
-        )
-      );
-    }, 2000);
+  const handleTest = async (config) => {
+    setTestingId(config.id);
+    setTestStatus((prev) => ({ ...prev, [config.id]: null }));
+    try {
+      const result = await aiService.testConnection(config);
+      setTestStatus((prev) => ({ ...prev, [config.id]: result.success ? 'success' : 'error' }));
+      toast.show(result.success ? '连接成功' : `连接失败：${result.message}`, result.success ? 'success' : 'error');
+    } catch (err) {
+      setTestStatus((prev) => ({ ...prev, [config.id]: 'error' }));
+      toast.show('测试失败：' + err.message, 'error');
+    } finally {
+      setTestingId(null);
+    }
   };
 
   const handleDelete = (id) => {
-    setConfigs((prev) => prev.filter((c) => c.id !== id));
+    deleteConfig(id);
+    toast.show('配置已删除', 'success');
   };
 
   const handleAdd = () => {
     if (!newConfig.name || !newConfig.apiKey) return;
     const providerConfig = AI_PROVIDER_CONFIGS[newConfig.provider];
-    setConfigs((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        ...newConfig,
-        baseUrl: newConfig.baseUrl || providerConfig.baseUrl,
-        model: newConfig.model || providerConfig.defaultModel,
-        isActive: false,
-        isExpanded: false,
-        isTesting: false,
-        testStatus: null,
-      },
-    ]);
+    addConfig({
+      ...newConfig,
+      baseUrl: newConfig.baseUrl || providerConfig.baseUrl,
+      model: newConfig.model || providerConfig.defaultModel,
+      isActive: configs.length === 0,
+    });
     setShowAddForm(false);
     setNewConfig({
       provider: AI_PROVIDERS.OPENAI,
@@ -102,12 +89,11 @@ function AIConfigPage() {
       model: '',
       temperature: 0.7,
     });
+    toast.show('配置已添加', 'success');
   };
 
-  const updateConfig = (id, field, value) => {
-    setConfigs((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, [field]: value } : c))
-    );
+  const updateField = (id, field, value) => {
+    updateConfig(id, { [field]: value });
   };
 
   return (
@@ -147,19 +133,19 @@ function AIConfigPage() {
                   <div style={{ flex: 1 }}>
                     <h3 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>{config.name}</h3>
                     <p style={{ fontSize: '13px', margin: '2px 0 0', color: 'var(--on-surface-variant)' }}>
-                      {AI_PROVIDER_CONFIGS[config.provider].name} · {config.model}
+                      {AI_PROVIDER_CONFIGS[config.provider]?.name || config.provider} · {config.model}
                     </p>
                   </div>
 
-                  {config.testStatus === 'success' && (
+                  {testStatus[config.id] === 'success' && (
                     <Check size={18} color="var(--tertiary)" />
                   )}
-                  {config.testStatus === 'error' && (
+                  {testStatus[config.id] === 'error' && (
                     <AlertCircle size={18} color="var(--error)" />
                   )}
 
                   <motion.div
-                    animate={{ rotate: config.isExpanded ? 180 : 0 }}
+                    animate={{ rotate: expandedId === config.id ? 180 : 0 }}
                     transition={{ duration: 0.2 }}
                   >
                     <ChevronDown size={18} color="var(--outline)" />
@@ -168,7 +154,7 @@ function AIConfigPage() {
 
                 {/* Expanded content */}
                 <AnimatePresence>
-                  {config.isExpanded && (
+                  {expandedId === config.id && (
                     <motion.div
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
@@ -184,8 +170,8 @@ function AIConfigPage() {
                           </label>
                           <input
                             type="password"
-                            value={config.apiKey}
-                            onChange={(e) => updateConfig(config.id, 'apiKey', e.target.value)}
+                            value={config.apiKey || ''}
+                            onChange={(e) => updateField(config.id, 'apiKey', e.target.value)}
                             placeholder="sk-..."
                             style={inputStyle}
                           />
@@ -198,8 +184,8 @@ function AIConfigPage() {
                           </label>
                           <input
                             type="text"
-                            value={config.baseUrl}
-                            onChange={(e) => updateConfig(config.id, 'baseUrl', e.target.value)}
+                            value={config.baseUrl || ''}
+                            onChange={(e) => updateField(config.id, 'baseUrl', e.target.value)}
                             style={inputStyle}
                           />
                         </div>
@@ -209,29 +195,39 @@ function AIConfigPage() {
                           <label className="label-caps" style={{ color: 'var(--outline)', marginBottom: '6px', display: 'block' }}>
                             模型
                           </label>
-                          <select
-                            value={config.model}
-                            onChange={(e) => updateConfig(config.id, 'model', e.target.value)}
-                            style={{ ...inputStyle, cursor: 'pointer' }}
-                          >
-                            {AI_PROVIDER_CONFIGS[config.provider].models.map((m) => (
-                              <option key={m} value={m}>{m}</option>
-                            ))}
-                          </select>
+                          {config.provider === AI_PROVIDERS.CUSTOM ? (
+                            <input
+                              type="text"
+                              value={config.model || ''}
+                              onChange={(e) => updateField(config.id, 'model', e.target.value)}
+                              placeholder="例如：llama3-70b"
+                              style={inputStyle}
+                            />
+                          ) : (
+                            <select
+                              value={config.model || ''}
+                              onChange={(e) => updateField(config.id, 'model', e.target.value)}
+                              style={{ ...inputStyle, cursor: 'pointer' }}
+                            >
+                              {(AI_PROVIDER_CONFIGS[config.provider]?.models || []).map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          )}
                         </div>
 
                         {/* Temperature */}
                         <div>
                           <label className="label-caps" style={{ color: 'var(--outline)', marginBottom: '6px', display: 'block' }}>
-                            <Thermometer size={12} style={{ display: 'inline', marginRight: '4px' }} /> 温度: {config.temperature}
+                            <Thermometer size={12} style={{ display: 'inline', marginRight: '4px' }} /> 温度: {config.temperature ?? 0.7}
                           </label>
                           <input
                             type="range"
                             min="0"
                             max="2"
                             step="0.1"
-                            value={config.temperature}
-                            onChange={(e) => updateConfig(config.id, 'temperature', parseFloat(e.target.value))}
+                            value={config.temperature ?? 0.7}
+                            onChange={(e) => updateField(config.id, 'temperature', parseFloat(e.target.value))}
                             style={{ width: '100%' }}
                           />
                         </div>
@@ -241,17 +237,17 @@ function AIConfigPage() {
                           <NeonButton
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleTest(config.id)}
-                            disabled={config.isTesting}
+                            onClick={() => handleTest(config)}
+                            disabled={testingId === config.id}
                           >
-                            {config.isTesting ? (
+                            {testingId === config.id ? (
                               <><Loader2 size={14} className="spin" /> 测试中...</>
                             ) : (
                               <><Check size={14} /> 测试连接</>
                             )}
                           </NeonButton>
                           {!config.isActive && (
-                            <NeonButton variant="primary" size="sm" onClick={() => setActive(config.id)}>
+                            <NeonButton variant="primary" size="sm" onClick={() => setActiveConfig(config.id)}>
                               设为默认
                             </NeonButton>
                           )}
@@ -347,6 +343,21 @@ function AIConfigPage() {
                   />
                 </div>
 
+                {newConfig.provider === AI_PROVIDERS.CUSTOM && (
+                  <div>
+                    <label className="label-caps" style={{ color: 'var(--outline)', marginBottom: '6px', display: 'block' }}>
+                      <Server size={12} style={{ display: 'inline', marginRight: '4px' }} /> Base URL
+                    </label>
+                    <input
+                      type="text"
+                      value={newConfig.baseUrl}
+                      onChange={(e) => setNewConfig((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                      placeholder="https://api.example.com/v1"
+                      style={inputStyle}
+                    />
+                  </div>
+                )}
+
                 <div>
                   <label className="label-caps" style={{ color: 'var(--outline)', marginBottom: '6px', display: 'block' }}>
                     API Key
@@ -359,6 +370,21 @@ function AIConfigPage() {
                     style={inputStyle}
                   />
                 </div>
+
+                {newConfig.provider === AI_PROVIDERS.CUSTOM && (
+                  <div>
+                    <label className="label-caps" style={{ color: 'var(--outline)', marginBottom: '6px', display: 'block' }}>
+                      模型
+                    </label>
+                    <input
+                      type="text"
+                      value={newConfig.model}
+                      onChange={(e) => setNewConfig((prev) => ({ ...prev, model: e.target.value }))}
+                      placeholder="例如：llama3-70b"
+                      style={inputStyle}
+                    />
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-sm)' }}>
                   <NeonButton variant="ghost" fullWidth onClick={() => setShowAddForm(false)}>

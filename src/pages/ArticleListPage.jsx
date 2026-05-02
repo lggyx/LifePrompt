@@ -1,10 +1,11 @@
 /**
  * ArticleListPage - Article list with view mode toggle and filters
+ * Connected to SQLite via useArticles hook
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LayoutGrid,
   List,
@@ -19,6 +20,8 @@ import GlassCard from '../components/ui/GlassCard';
 import PillTag from '../components/ui/PillTag';
 import { VIEW_MODES, SOURCE_TYPES, SOURCE_TYPE_LABELS } from '../utils/constants';
 import { listContainerVariants, listItemVariants, springs } from '../utils/animations';
+import { useArticles } from '../hooks/useArticles';
+import useUISearchStore from '../stores/useUISearchStore';
 
 const TIME_RANGES = [
   { label: '今天', days: 1 },
@@ -35,83 +38,78 @@ const viewModeIcons = {
 
 function ArticleListPage() {
   const navigate = useNavigate();
-  const [articles, setArticles] = useState([]);
-  const [viewMode, setViewMode] = useState(VIEW_MODES.STANDARD);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [selectedSources, setSelectedSources] = useState([]);
-  const [selectedTimeRange, setSelectedTimeRange] = useState(0);
+  const [searchParams] = useSearchParams();
+  const tagFilterFromUrl = searchParams.get('tag');
 
-  const mockTags = ['知识管理', 'AI', '效率', '学习', '写作', '笔记方法', '思维', '工具'];
+  const { articles, tags, isLoading, loadArticles, searchArticles, filterByTag, filterBySourceType } = useArticles();
 
-  // Mock articles
+  const {
+    viewMode,
+    setViewMode,
+    searchQuery,
+    setSearchQuery,
+    showFilters,
+    toggleFilters,
+    selectedTags,
+    toggleTag,
+    clearTags,
+    selectedSources,
+    toggleSource,
+    clearSources,
+    timeRange,
+    setTimeRange,
+    resetAll,
+  } = useUISearchStore();
+
+  // Initial load
   useEffect(() => {
-    const mockArticles = Array.from({ length: 20 }, (_, i) => ({
-      id: `article-${i + 1}`,
-      title: [
-        '如何构建高效的第二大脑系统',
-        'AI辅助写作的五个关键原则',
-        '深度工作：在碎片化时代保持专注',
-        '知识管理的终极形态是什么',
-        '从信息囤积到知识创造的转变',
-        '费曼技巧：用最简单的话解释复杂概念',
-        '笔记链接的力量',
-        '认知卸载：让外部系统为你记忆',
-        '渐进式总结方法',
-        'Zettelkasten完全指南',
-      ][i % 10],
-      summary: '本文探讨了如何利用现代工具和方法论构建一个高效的个人信息管理系统，让知识真正服务于创造力。',
-      tags: [mockTags[i % mockTags.length], mockTags[(i + 1) % mockTags.length]],
-      imageUrl: i % 3 === 0
-        ? `https://images.unsplash.com/photo-${1516321318423 + i}?w=400&h=300&fit=crop`
-        : null,
-      sourceType: Object.values(SOURCE_TYPES)[i % 4],
-      createdAt: new Date(Date.now() - i * 86400000).toISOString(),
-    }));
-    setArticles(mockArticles);
-  }, []);
+    if (tagFilterFromUrl) {
+      filterByTag(tagFilterFromUrl);
+    } else {
+      loadArticles();
+    }
+  }, [loadArticles, tagFilterFromUrl, filterByTag]);
 
-  const toggleTag = (tag) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
-  };
+  // Search debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.trim()) {
+        searchArticles(searchQuery);
+      } else if (!tagFilterFromUrl) {
+        loadArticles();
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchArticles, loadArticles, tagFilterFromUrl]);
 
-  const toggleSource = (source) => {
-    setSelectedSources((prev) =>
-      prev.includes(source) ? prev.filter((s) => s !== source) : [...prev, source]
-    );
-  };
+  const filteredArticles = useMemo(() => {
+    let result = [...articles];
 
-  const filteredArticles = articles.filter((article) => {
-    if (searchQuery && !article.title.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
+    if (selectedTags.length > 0) {
+      result = result.filter((a) => selectedTags.some((t) => a.tags?.includes(t)));
     }
-    if (selectedTags.length > 0 && !selectedTags.some((t) => article.tags.includes(t))) {
-      return false;
+    if (selectedSources.length > 0) {
+      result = result.filter((a) => selectedSources.includes(a.sourceType));
     }
-    if (selectedSources.length > 0 && !selectedSources.includes(article.sourceType)) {
-      return false;
+    if (timeRange > 0) {
+      const cutoff = new Date(Date.now() - timeRange * 86400000);
+      result = result.filter((a) => new Date(a.createdAt) >= cutoff);
     }
-    if (selectedTimeRange > 0) {
-      const articleDate = new Date(article.createdAt);
-      const cutoff = new Date(Date.now() - selectedTimeRange * 86400000);
-      if (articleDate < cutoff) return false;
-    }
-    return true;
-  });
+
+    return result;
+  }, [articles, selectedTags, selectedSources, timeRange]);
 
   const renderArticleCard = (article) => {
     const isCompact = viewMode === VIEW_MODES.COMPACT;
     const isRich = viewMode === VIEW_MODES.RICH;
+    const hasImage = article.images && article.images.length > 0;
 
     return (
       <motion.div
         key={article.id}
         variants={listItemVariants}
         layout
-        layoutId={article.id}
+        layoutId={String(article.id)}
         whileHover={{ scale: 1.02, y: -2 }}
         whileTap={{ scale: 0.98 }}
         onClick={() => navigate(`/article/${article.id}`)}
@@ -127,7 +125,7 @@ function ArticleListPage() {
             alignItems: isRich ? 'stretch' : 'center',
           }}
         >
-          {article.imageUrl && isRich && (
+          {(hasImage || article.imageUrl) && isRich && (
             <div
               style={{
                 width: '100%',
@@ -140,9 +138,17 @@ function ArticleListPage() {
                 justifyContent: 'center',
               }}
             >
-              <span style={{ fontSize: '12px', color: 'var(--outline)' }}>
-                📷 {article.title.slice(0, 15)}...
-              </span>
+              {hasImage ? (
+                <img
+                  src={article.images[0].data}
+                  alt={article.title}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                <span style={{ fontSize: '12px', color: 'var(--outline)' }}>
+                  📷 {article.title.slice(0, 15)}...
+                </span>
+              )}
             </div>
           )}
 
@@ -179,7 +185,7 @@ function ArticleListPage() {
             )}
 
             <div style={{ display: 'flex', gap: '4px', marginTop: '8px', flexWrap: 'wrap' }}>
-              {article.tags.map((tag) => (
+              {(article.tags || []).map((tag) => (
                 <PillTag key={tag} size="sm">
                   {tag}
                 </PillTag>
@@ -261,7 +267,7 @@ function ArticleListPage() {
             )}
             <motion.button
               whileTap={{ scale: 0.85 }}
-              onClick={() => setShowFilters(!showFilters)}
+              onClick={() => toggleFilters()}
               style={{
                 border: 'none',
                 background: showFilters ? 'var(--primary-container)' : 'none',
@@ -294,14 +300,14 @@ function ArticleListPage() {
                     标签
                   </span>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {mockTags.map((tag) => (
+                    {tags.map((tag) => (
                       <PillTag
-                        key={tag}
-                        selected={selectedTags.includes(tag)}
-                        onClick={() => toggleTag(tag)}
+                        key={tag.name}
+                        selected={selectedTags.includes(tag.name)}
+                        onClick={() => toggleTag(tag.name)}
                         size="sm"
                       >
-                        {tag}
+                        {tag.name}
                       </PillTag>
                     ))}
                   </div>
@@ -314,8 +320,8 @@ function ArticleListPage() {
                     {TIME_RANGES.map((range) => (
                       <PillTag
                         key={range.days}
-                        selected={selectedTimeRange === range.days}
-                        onClick={() => setSelectedTimeRange(range.days)}
+                        selected={timeRange === range.days}
+                        onClick={() => setTimeRange(range.days)}
                         size="sm"
                       >
                         {range.label}
@@ -346,24 +352,35 @@ function ArticleListPage() {
         </AnimatePresence>
 
         {/* Article list */}
-        <motion.div
-          variants={listContainerVariants}
-          initial="hidden"
-          animate="visible"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: viewMode === VIEW_MODES.COMPACT
-              ? 'repeat(auto-fill, minmax(140px, 1fr))'
-              : '1fr',
-            gap: viewMode === VIEW_MODES.COMPACT ? 'var(--space-sm)' : 'var(--space-md)',
-          }}
-        >
-          <AnimatePresence mode="popLayout">
-            {filteredArticles.map(renderArticleCard)}
-          </AnimatePresence>
-        </motion.div>
+        {isLoading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <GlassCard key={i} hoverable={false} padding="var(--space-md)">
+                <div style={{ height: 16, width: '60%', background: 'var(--surface-container-high)', borderRadius: 'var(--radius-sm)', marginBottom: 8 }} />
+                <div style={{ height: 12, width: '100%', background: 'var(--surface-container-high)', borderRadius: 'var(--radius-sm)' }} />
+              </GlassCard>
+            ))}
+          </div>
+        ) : (
+          <motion.div
+            variants={listContainerVariants}
+            initial="hidden"
+            animate="visible"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: viewMode === VIEW_MODES.COMPACT
+                ? 'repeat(auto-fill, minmax(140px, 1fr))'
+                : '1fr',
+              gap: viewMode === VIEW_MODES.COMPACT ? 'var(--space-sm)' : 'var(--space-md)',
+            }}
+          >
+            <AnimatePresence mode="popLayout">
+              {filteredArticles.map(renderArticleCard)}
+            </AnimatePresence>
+          </motion.div>
+        )}
 
-        {filteredArticles.length === 0 && (
+        {filteredArticles.length === 0 && !isLoading && (
           <GlassCard
             hoverable={false}
             style={{

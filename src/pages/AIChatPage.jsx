@@ -1,71 +1,61 @@
 /**
  * AIChatPage - AI dialog interface with local article context
+ * Connected to real AI service via useAIChat hook
+ * Mobile-first responsive layout
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Bot, User, Sparkles, Loader2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import PageTransition from '../components/layout/PageTransition';
 import GlassCard from '../components/ui/GlassCard';
-import { springs, chatMessageVariants, typingDotVariants } from '../utils/animations';
+import MarkdownRenderer from '../components/ui/MarkdownRenderer';
+import { chatMessageVariants, typingDotVariants } from '../utils/animations';
+import { useAIChat } from '../hooks/useAIChat';
+import { useArticles } from '../hooks/useArticles';
 
 function AIChatPage() {
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: '你好！我是你的 AI 助手。你可以问我关于你收藏的文章的问题，或者让我帮你总结、分类、生成内容。',
-      timestamp: Date.now(),
-    },
-  ]);
+  const {
+    messages,
+    isLoading,
+    error,
+    streamingContent,
+    sendMessage,
+    clearMessages,
+    resetError,
+  } = useAIChat();
+  const { articles } = useArticles();
+
   const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const textareaRef = useRef(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages, streamingContent, isLoading, scrollToBottom]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  }, [input]);
 
   const handleSend = async () => {
-    if (!input.trim() || isTyping) return;
-
-    const userMsg = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: input.trim(),
-      timestamp: Date.now(),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
+    if (!input.trim() || isLoading) return;
+    const content = input.trim();
     setInput('');
-    setIsTyping(true);
-
-    // Simulate AI response with typing effect
-    setTimeout(() => {
-      const responses = [
-        '根据你收藏的文章，关于第二大脑系统，我可以为你总结几个核心要点：PARA 方法、渐进式总结和笔记链接。你想深入了解哪个方面？',
-        '我发现你有3篇关于AI辅助写作的文章。需要我帮你生成一个综合总结吗？',
-        '基于你的阅读习惯，我建议给这篇文章打上"效率"和"知识管理"的标签。你觉得如何？',
-        '这是根据你提供的链接内容生成的标题建议：\n1. 如何构建个人知识管理系统\n2. 从信息囤积到知识创造\n3. 第二大脑方法论实践指南',
-      ];
-      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-
-      const aiMsg = {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        content: randomResponse,
-        timestamp: Date.now(),
-      };
-
-      setMessages((prev) => [...prev, aiMsg]);
-      setIsTyping(false);
-    }, 1500 + Math.random() * 1000);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    await sendMessage(content, {
+      articles: articles.slice(0, 5),
+    });
   };
 
   const handleKeyDown = (e) => {
@@ -86,19 +76,26 @@ function AIChatPage() {
     <PageTransition>
       <TopBar title="AI 助手" />
 
+      {/*
+        页面根容器：
+        - 不设置固定 height，依靠 AppShell.main 的 flex:1 自然填充
+        - 使用 flex column 让消息区域自动占满剩余空间
+      */}
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
-          height: 'calc(100dvh - 56px - 64px - env(safe-area-inset-bottom, 0px))',
-          overflow: 'hidden',
+          height: '100%',
+          minHeight: 0,
         }}
       >
         {/* Messages area */}
         <div
           style={{
             flex: 1,
+            minHeight: 0,
             overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
             padding: 'var(--space-md)',
             display: 'flex',
             flexDirection: 'column',
@@ -108,7 +105,7 @@ function AIChatPage() {
           <AnimatePresence mode="popLayout">
             {messages.map((msg) => (
               <motion.div
-                key={msg.id}
+                key={`${msg.id || msg.createdAt}`}
                 variants={chatMessageVariants}
                 initial="hidden"
                 animate="visible"
@@ -123,26 +120,27 @@ function AIChatPage() {
                 {msg.role === 'assistant' && (
                   <div
                     style={{
-                      width: 32,
-                      height: 32,
+                      width: 28,
+                      height: 28,
                       borderRadius: 'var(--radius-full)',
                       background: 'var(--primary-container)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexShrink: 0,
+                      marginTop: 2,
                       boxShadow: 'var(--glow-primary)',
                     }}
                   >
-                    <Bot size={16} color="var(--on-primary-container)" />
+                    <Bot size={14} color="var(--on-primary-container)" />
                   </div>
                 )}
 
                 <GlassCard
                   hoverable={false}
-                  padding="var(--space-sm) var(--space-md)"
+                  padding="10px 14px"
                   style={{
-                    maxWidth: '75%',
+                    maxWidth: 'min(85%, 520px)',
                     background:
                       msg.role === 'user'
                         ? 'var(--secondary-container)'
@@ -153,43 +151,89 @@ function AIChatPage() {
                         : 'var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px',
                   }}
                 >
-                  <p
-                    style={{
-                      fontSize: '14px',
-                      lineHeight: 1.6,
-                      color:
-                        msg.role === 'user'
-                          ? 'var(--on-secondary-container)'
-                          : 'var(--on-surface)',
-                      whiteSpace: 'pre-wrap',
-                      margin: 0,
-                    }}
-                  >
-                    {msg.content}
-                  </p>
+                  {msg.role === 'assistant' ? (
+                    <MarkdownRenderer
+                      content={msg.content}
+                      style={{ fontSize: '14px', lineHeight: 1.6 }}
+                    />
+                  ) : (
+                    <p
+                      style={{
+                        fontSize: '14px',
+                        lineHeight: 1.6,
+                        color: 'var(--on-secondary-container)',
+                        whiteSpace: 'pre-wrap',
+                        margin: 0,
+                      }}
+                    >
+                      {msg.content}
+                    </p>
+                  )}
                 </GlassCard>
 
                 {msg.role === 'user' && (
                   <div
                     style={{
-                      width: 32,
-                      height: 32,
+                      width: 28,
+                      height: 28,
                       borderRadius: 'var(--radius-full)',
                       background: 'var(--secondary-container)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexShrink: 0,
+                      marginTop: 2,
                     }}
                   >
-                    <User size={16} color="var(--on-secondary-container)" />
+                    <User size={14} color="var(--on-secondary-container)" />
                   </div>
                 )}
               </motion.div>
             ))}
 
+            {/* Streaming indicator */}
+            {isLoading && streamingContent && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{
+                  display: 'flex',
+                  gap: 'var(--space-sm)',
+                  alignItems: 'flex-start',
+                  justifyContent: 'flex-start',
+                }}
+              >
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 'var(--radius-full)',
+                    background: 'var(--primary-container)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    marginTop: 2,
+                    boxShadow: 'var(--glow-primary)',
+                  }}
+                >
+                  <Bot size={14} color="var(--on-primary-container)" />
+                </div>
+                <GlassCard
+                  hoverable={false}
+                  padding="10px 14px"
+                  style={{ maxWidth: 'min(85%, 520px)' }}
+                >
+                  <MarkdownRenderer
+                    content={streamingContent}
+                    style={{ fontSize: '14px', lineHeight: 1.6 }}
+                  />
+                </GlassCard>
+              </motion.div>
+            )}
+
             {/* Typing indicator */}
-            {isTyping && (
+            {isLoading && !streamingContent && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -198,22 +242,24 @@ function AIChatPage() {
                   display: 'flex',
                   gap: 'var(--space-sm)',
                   alignItems: 'flex-start',
+                  justifyContent: 'flex-start',
                 }}
               >
                 <div
                   style={{
-                    width: 32,
-                    height: 32,
+                    width: 28,
+                    height: 28,
                     borderRadius: 'var(--radius-full)',
                     background: 'var(--primary-container)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
+                    marginTop: 2,
                     boxShadow: 'var(--glow-primary)',
                   }}
                 >
-                  <Bot size={16} color="var(--on-primary-container)" />
+                  <Bot size={14} color="var(--on-primary-container)" />
                 </div>
                 <GlassCard hoverable={false} padding="12px 16px">
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -237,11 +283,31 @@ function AIChatPage() {
             )}
           </AnimatePresence>
 
+          {/* Error message */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              style={{
+                padding: 'var(--space-sm) var(--space-md)',
+                background: 'var(--error-container)',
+                color: 'var(--error)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '13px',
+                textAlign: 'center',
+                cursor: 'pointer',
+              }}
+              onClick={resetError}
+            >
+              {error} (点击关闭)
+            </motion.div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
 
         {/* Quick actions */}
-        {!isTyping && messages.length < 3 && (
+        {!isLoading && messages.length < 3 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -251,6 +317,8 @@ function AIChatPage() {
               gap: '8px',
               overflowX: 'auto',
               marginBottom: 'var(--space-sm)',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
             }}
           >
             {quickActions.map((action) => (
@@ -290,6 +358,7 @@ function AIChatPage() {
             padding: 'var(--space-md)',
             borderTop: '1px solid var(--outline-variant)',
             background: 'var(--surface)',
+            flexShrink: 0,
           }}
         >
           <div
@@ -301,11 +370,14 @@ function AIChatPage() {
           >
             <GlassCard
               hoverable={false}
-              padding="var(--space-sm) var(--space-md)"
+              padding="10px 14px"
               style={{ flex: 1 }}
             >
               <textarea
-                ref={inputRef}
+                ref={(el) => {
+                  textareaRef.current = el;
+                  inputRef.current = el;
+                }}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -322,6 +394,7 @@ function AIChatPage() {
                   resize: 'none',
                   maxHeight: 120,
                   lineHeight: 1.5,
+                  overflowY: 'auto',
                 }}
               />
             </GlassCard>
@@ -329,28 +402,28 @@ function AIChatPage() {
             <motion.button
               whileTap={{ scale: 0.85 }}
               onClick={handleSend}
-              disabled={!input.trim() || isTyping}
+              disabled={!input.trim() || isLoading}
               style={{
                 width: 44,
                 height: 44,
                 borderRadius: 'var(--radius-full)',
                 border: 'none',
                 background:
-                  input.trim() && !isTyping
+                  input.trim() && !isLoading
                     ? 'var(--primary-container)'
                     : 'var(--surface-container)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                cursor: input.trim() && !isTyping ? 'pointer' : 'not-allowed',
+                cursor: input.trim() && !isLoading ? 'pointer' : 'not-allowed',
                 flexShrink: 0,
                 boxShadow:
-                  input.trim() && !isTyping
+                  input.trim() && !isLoading
                     ? 'var(--glow-primary)'
                     : 'none',
               }}
             >
-              {isTyping ? (
+              {isLoading ? (
                 <Loader2 size={20} color="var(--on-surface-variant)" className="spin" />
               ) : (
                 <Send

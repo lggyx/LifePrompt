@@ -1,5 +1,6 @@
 /**
  * MindMapPage - 3D Knowledge Graph with Three.js + Dashboard HUD
+ * Connected to SQLite via useArticles hook
  */
 
 import { useState, useEffect } from 'react';
@@ -9,9 +10,7 @@ import { RotateCcw, Maximize2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import PageTransition from '../components/layout/PageTransition';
 import { DashboardHUD } from '../components/three/DashboardHUD';
-
-// Mock data (will be replaced with real data from IndexedDB)
-import { generateMockArticles } from '../utils/mockData';
+import { useArticles } from '../hooks/useArticles';
 
 const DEFAULT_TAGS = [
   { name: '知识管理', color: '#00f0ff' },
@@ -24,15 +23,13 @@ const DEFAULT_TAGS = [
 function MindMapPage() {
   const navigate = useNavigate();
   const [theme, setTheme] = useState('light');
-  const [articles, setArticles] = useState([]);
-  const [tags] = useState(DEFAULT_TAGS);
+  const { articles, tags, loadArticles } = useArticles();
 
   // Get current theme
   useEffect(() => {
     const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
     setTheme(currentTheme);
 
-    // Listen for theme changes
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         if (mutation.attributeName === 'data-theme') {
@@ -45,23 +42,28 @@ function MindMapPage() {
     return () => observer.disconnect();
   }, []);
 
-  // Load mock articles (TODO: replace with real data from IndexedDB)
+  // Load real articles from SQLite
   useEffect(() => {
-    const mockArticles = generateMockArticles(15);
-    setArticles(mockArticles);
-  }, []);
+    loadArticles({ limit: 50 });
+  }, [loadArticles]);
+
+  // Map DB tags to 3D visualization tags with colors
+  const vizTags = tags.length > 0
+    ? tags.slice(0, 8).map((t, i) => ({
+        name: t.name,
+        color: DEFAULT_TAGS[i % DEFAULT_TAGS.length]?.color || '#00f0ff',
+      }))
+    : DEFAULT_TAGS;
 
   const handleArticleClick = (article) => {
-    navigate(`/articles/${article.id}`);
+    navigate(`/article/${article.id}`);
   };
 
   const handleTagClick = (tagName) => {
-    // Navigate to article list filtered by tag
     navigate(`/articles?tag=${encodeURIComponent(tagName)}`);
   };
 
   const handleReset = () => {
-    // Reset camera position
     window.location.reload();
   };
 
@@ -93,7 +95,6 @@ function MindMapPage() {
             <motion.button
               whileTap={{ scale: 0.85 }}
               onClick={() => {
-                // Toggle fullscreen
                 if (!document.fullscreenElement) {
                   document.documentElement.requestFullscreen();
                 } else {
@@ -129,7 +130,7 @@ function MindMapPage() {
       >
         <DashboardHUD
           articles={articles}
-          tags={tags}
+          tags={vizTags}
           theme={theme}
           onTagClick={handleTagClick}
         />
