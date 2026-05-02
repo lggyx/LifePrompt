@@ -20,6 +20,11 @@ import AIConfigPage from './pages/AIConfigPage';
 import PublishPage from './pages/PublishPage';
 import UserProfilePage from './pages/UserProfilePage';
 import OnboardingPage from './pages/OnboardingPage';
+import ShortcutConfigPage from './pages/ShortcutConfigPage';
+import CloudBackupPage from './pages/CloudBackupPage';
+import StoragePage from './pages/StoragePage';
+import LANBackupPage from './pages/LANBackupPage';
+import SearchPage from './pages/SearchPage';
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -34,12 +39,13 @@ function AnimatedRoutes() {
         <Route path="/capture" element={<CapturePage />} />
         <Route path="/glasses" element={<GlassesInboxPage />} />
         <Route path="/chat" element={<AIChatPage />} />
+        <Route path="/search" element={<SearchPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/ai" element={<AIConfigPage />} />
-        <Route path="/settings/shortcuts" element={<SettingsPage />} />
-        <Route path="/settings/cloud" element={<SettingsPage />} />
-        <Route path="/settings/lan" element={<SettingsPage />} />
-        <Route path="/settings/storage" element={<SettingsPage />} />
+        <Route path="/settings/shortcuts" element={<ShortcutConfigPage />} />
+        <Route path="/settings/cloud" element={<CloudBackupPage />} />
+        <Route path="/settings/lan" element={<LANBackupPage />} />
+        <Route path="/settings/storage" element={<StoragePage />} />
         <Route path="/publish/:id" element={<PublishPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/onboarding/profile" element={<UserProfilePage />} />

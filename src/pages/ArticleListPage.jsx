@@ -20,6 +20,13 @@ import PillTag from '../components/ui/PillTag';
 import { VIEW_MODES, SOURCE_TYPES, SOURCE_TYPE_LABELS } from '../utils/constants';
 import { listContainerVariants, listItemVariants, springs } from '../utils/animations';
 
+const TIME_RANGES = [
+  { label: '今天', days: 1 },
+  { label: '最近7天', days: 7 },
+  { label: '最近30天', days: 30 },
+  { label: '全部', days: 0 },
+];
+
 const viewModeIcons = {
   [VIEW_MODES.COMPACT]: LayoutGrid,
   [VIEW_MODES.STANDARD]: List,
@@ -34,6 +41,7 @@ function ArticleListPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedSources, setSelectedSources] = useState([]);
+  const [selectedTimeRange, setSelectedTimeRange] = useState(0);
 
   const mockTags = ['知识管理', 'AI', '效率', '学习', '写作', '笔记方法', '思维', '工具'];
 
@@ -85,6 +93,11 @@ function ArticleListPage() {
     }
     if (selectedSources.length > 0 && !selectedSources.includes(article.sourceType)) {
       return false;
+    }
+    if (selectedTimeRange > 0) {
+      const articleDate = new Date(article.createdAt);
+      const cutoff = new Date(Date.now() - selectedTimeRange * 86400000);
+      if (articleDate < cutoff) return false;
     }
     return true;
   });
@@ -289,6 +302,23 @@ function ArticleListPage() {
                         size="sm"
                       >
                         {tag}
+                      </PillTag>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 'var(--space-sm)' }}>
+                  <span className="label-caps" style={{ color: 'var(--outline)', marginBottom: '8px', display: 'block' }}>
+                    时间范围
+                  </span>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {TIME_RANGES.map((range) => (
+                      <PillTag
+                        key={range.days}
+                        selected={selectedTimeRange === range.days}
+                        onClick={() => setSelectedTimeRange(range.days)}
+                        size="sm"
+                      >
+                        {range.label}
                       </PillTag>
                     ))}
                   </div>
