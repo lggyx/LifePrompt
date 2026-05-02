@@ -16,6 +16,7 @@ function PageTransition({ children, className = '' }) {
       className={className}
       style={{
         minHeight: '100%',
+        paddingTop: '24px',
         willChange: 'transform, opacity',
       }}
     >

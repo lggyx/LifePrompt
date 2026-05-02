@@ -24,7 +24,6 @@ function TopBar({
 
   return (
     <header
-      className="safe-top"
       style={{
         position: 'sticky',
         top: 0,

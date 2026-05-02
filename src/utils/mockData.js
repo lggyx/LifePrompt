@@ -93,7 +93,8 @@ export function generateMockArticles(count = 20) {
     const titleIdx = i % MOCK_TITLES.length;
     const summaryIdx = i % MOCK_SUMMARIES.length;
     const tagCount = Math.floor(Math.random() * 3) + 1;
-    const tags = randomPick(MOCK_TAGS, tagCount).map(t => t.name);
+    const pickedTags = randomPick(MOCK_TAGS, tagCount);
+    const tags = Array.isArray(pickedTags) ? pickedTags.map(t => t.name) : [pickedTags.name];
     const sourceTypes = Object.values(SOURCE_TYPES);
     const sourceType = sourceTypes[i % sourceTypes.length];
 

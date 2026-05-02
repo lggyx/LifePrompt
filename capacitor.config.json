@@ -8,9 +8,9 @@
   },
   "plugins": {
     "StatusBar": {
-      "overlaysWebView": true,
-      "style": "DARK",
-      "backgroundColor": "#00000000"
+      "overlaysWebView": false,
+      "style": "DEFAULT",
+      "backgroundColor": "#f8f9fa"
     },
     "Keyboard": {
       "resize": "body",
