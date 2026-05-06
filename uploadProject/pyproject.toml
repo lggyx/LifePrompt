@@ -1,0 +1,13 @@
+[project]
+name = "upload-server"
+version = "0.2.0"
+description = "WebSocket upload server with JWT auth and AI search"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "flask>=3.1.3",
+    "flask-cors>=6.0.2",
+    "flask-socketio>=5.5.1",
+    "pyjwt>=2.10.0",
+    "watchdog>=3.0.0",
+]
