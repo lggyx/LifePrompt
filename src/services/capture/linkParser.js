@@ -1,195 +1,168 @@
 /**
- * Link Parser — fetch + extract main content from web pages
+ * linkParser.js — Browser-compatible URL content extraction
  *
- * Flow:
- *   1. Try direct browser fetch (works for CORS-permissive sites)
- *   2. Fall back to Vite dev server /api/proxy (server-side fetch, no CORS)
- *   3. Parse HTML with jsdom → rule-based extraction → Markdown
+ * Strategy:
+ *   1. Fetch HTML via Vite proxy (/api/proxy) — server-side fetch, no CORS
+ *   2. Parse in-browser with regex/heuristic (no jsdom)
+ *   3. For best results, use /api/extract endpoint (runs jsdom on the server)
+ *
+ * Pure browser module — NO Node.js-only deps.
  */
 
-/* ======================== jsdom-backed extractor ======================== */
+/* ======================== Heuristic extractor ======================== */
 
-/** Build a jsdom JSDOM instance (loaded lazily to keep bundle lean) */
-async function getJSDOM(html, url) {
-  const { JSDOM } = await import('jsdom');
-  return new JSDOM(html, { url });
+function stripTags(html) {
+  return html.replace(/<[^>]+>/g, function (tag) {
+    const lower = tag.toLowerCase();
+    if (lower.match(/<\/?(p|div|section|article|main|h[1-6]|li|tr|td|th|blockquote)[^>]*>/)) return '\n';
+    if (lower.match(/<(br|hr)[^>]*>/)) return '\n';
+    if (lower.match(/<[^>]+>/)) return ' ';
+    return '';
+  });
 }
 
-/* ======================== HTML → Markdown converter ======================== */
-
-const BLOCK_TAGS = new Set([
-  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'p', 'div', 'section', 'article', 'main',
-  'ul', 'ol', 'li', 'dl', 'dt', 'dd',
-  'blockquote', 'pre', 'table', 'tbody', 'tr', 'td', 'th',
-]);
-const SKIP_TAGS = new Set([
-  'script', 'style', 'noscript', 'template', 'svg', 'nav',
-  'header', 'footer', 'aside', 'iframe', 'form', 'button',
-  'input', 'select', 'textarea',
-]);
-
-function htmlToText(node, chunks) {
-  if (node.nodeType === 3) {
-    const t = node.textContent;
-    if (t) chunks.push(t);
-    return;
-  }
-  if (node.nodeType !== 1) return;
-
-  const tag = node.tagName.toLowerCase();
-  if (SKIP_TAGS.has(tag)) return;
-  if (/^(meta|link|title)$/i.test(tag)) return;
-
-  const isBlock = BLOCK_TAGS.has(tag);
-  if (isBlock) chunks.push('\n\n');
-
-  switch (tag) {
-    case 'h1': chunks.push('# '); break;
-    case 'h2': chunks.push('## '); break;
-    case 'h3': chunks.push('### '); break;
-    case 'h4': chunks.push('#### '); break;
-    case 'h5': chunks.push('##### '); break;
-    case 'h6': chunks.push('###### '); break;
-    case 'strong': case 'b': chunks.push('**'); break;
-    case 'em': case 'i': chunks.push('*'); break;
-    case 'code': chunks.push('`'); break;
-    case 'pre': chunks.push('```\n'); break;
-    case 'a': chunks.push('['); break;
-    case 'img': chunks.push(`![${node.alt || ''}](${node.src || ''})`); return;
-    case 'br': chunks.push('\n'); return;
-    case 'hr': chunks.push('\n---\n'); return;
-    case 'blockquote': chunks.push('\n> '); return;
-  }
-
-  for (const child of node.childNodes) htmlToText(child, chunks);
-
-  switch (tag) {
-    case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6':
-      chunks.push('\n'); break;
-    case 'strong': case 'b': chunks.push('**'); break;
-    case 'em': case 'i': chunks.push('*'); break;
-    case 'code': chunks.push('`'); break;
-    case 'pre': chunks.push('\n```'); break;
-    case 'a': chunks.push(`](${node.getAttribute('href') || ''})`); break;
-    case 'blockquote': chunks.push('\n'); break;
-    case 'p': case 'div': case 'section':
-    case 'tr': case 'td': case 'th': chunks.push('\n'); break;
-  }
+function decodeHtml(str) {
+  const map = { '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
+  return str.replace(/&(?:[a-z]+|#\d+|#x[\da-f]+);/gi, (m) => map[m] || m);
 }
 
-function domToMarkdown(root) {
-  const chunks = [];
-  for (const child of root.childNodes) htmlToText(child, chunks);
-  return chunks.join('').replace(/\n{3,}/g, '\n\n').trim();
-}
+function extractMetaTags(html) {
+  // og:title
+  const titleM = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']*)["']/i);
+  // description
+  const descM = html.match(/<meta\s+(?:name|property)=["'](?:og:)?description["']\s+content=["']([^"']*)["']/i);
+  // <title>
+  const titleElM = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
 
-/* ======================== Heuristic extraction ======================== */
-
-function findMainEl(doc) {
-  const selectors = [
-    'article', 'main', '[role="main"]',
-    '.post-content', '.article-content', '.entry-content',
-    '.article-body', '.post-body', '.content-body',
-    '#main', '#content',
-  ];
-  for (const sel of selectors) {
-    const el = doc.querySelector(sel);
-    if (el && el.textContent.trim().length > 200) return el;
-  }
-  return doc.body;
-}
-
-function stripNoise(el) {
-  const bad = [
-    'nav', 'header', 'footer', 'aside', 'iframe', 'noscript', 'style',
-    'script', 'svg', 'form', 'button', 'input', 'select', 'textarea',
-  ];
-  bad.forEach((t) => { try { el.querySelectorAll(t).forEach((n) => n.remove()); } catch {} });
-  try {
-    el.querySelectorAll('[class*="comment"],[class*="sidebar"],[class*="menu"],[class*="cookie"],[class*="banner"]').forEach((n) => n.remove());
-  } catch {}
-  return el;
-}
-
-function readMeta(doc) {
-  const ogTitle = doc.querySelector('meta[property="og:title"]');
-  const metaDesc = doc.querySelector('meta[name="description"]');
-  const titleEl = doc.querySelector('title');
-  let title = titleEl ? titleEl.textContent.trim() : '';
-  if (ogTitle && 'content' in ogTitle && ogTitle.content) title = ogTitle.content.trim();
-  const excerpt = (metaDesc && 'content' in metaDesc && metaDesc.content) || '';
+  let title = (titleM ? titleM[1] : (titleElM ? titleElM[1] : ''));
+  title = decodeHtml(title.trim());
+  const excerpt = descM ? decodeHtml(descM[1]) : '';
   return { title, excerpt };
 }
 
-/**
- * Parse raw HTML → { title, content(markdown), excerpt }
- * @param {string} html  Raw HTML
- * @param {string} url   Source URL
- */
-async function extractContent(html, url = '') {
-  const dom = await getJSDOM(html, url);
-  const doc = dom.window.document;
-  const { title, excerpt } = readMeta(doc);
+function guessMainContent(html) {
+  // Try to find content between common markers
+  const bodyClose = html.lastIndexOf('</body>');
+  const bodyOpen = html.indexOf('<body');
+  const bodyStart = bodyOpen > 0 ? html.indexOf('>', bodyOpen) + 1 : 0;
+  const bodyEnd = bodyClose > 0 ? bodyClose : html.length;
+  const body = html.slice(bodyStart, bodyEnd);
 
-  let mainEl = findMainEl(doc);
-  let md = domToMarkdown(stripNoise(mainEl.cloneNode(true)));
+  // Remove scripts, styles, navs aggressively
+  const cleaned = body
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, ' ')
+    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, ' ')
+    .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, ' ');
 
-  if (md.length < 200) {
-    md = domToMarkdown(stripNoise(doc.body.cloneNode(true)));
-  }
-
-  if (md.length > 10000) md = md.slice(0, 10000) + '\n\n…[内容过长，已截断]';
-
-  return { title, content: md, excerpt };
+  return stripTags(cleaned).replace(/\s+/g, ' ').trim();
 }
 
-/* ======================== HTTP fetch ======================== */
+function textToMarkdown(raw) {
+  return decodeHtml(raw)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/* ======================== Fetch via Vite proxy ======================== */
 
 async function fetchHtml(url) {
+  let raw = null;
+
   // Strategy 1: direct fetch
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (res.ok) {
-      const text = await res.text();
-      if (text.length > 200) return text;
+      const t = await res.text();
+      if (t.length > 200) raw = t;
     }
   } catch { /* CORS or network blocked */ }
 
   // Strategy 2: Vite dev proxy
+  if (!raw) {
+    try {
+      const res = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) raw = await res.text();
+    } catch { /* proxy not available */ }
+  }
+
+  return raw;
+}
+
+/* ======================== /api/extract — server-side jsdom parsing ======================== */
+
+/**
+ * Preferred path: ask the Vite dev server to do jsdom extraction.
+ * Falls back gracefully if the endpoint is unavailable.
+ */
+async function extractOnServer(url) {
   try {
-    const res = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`, {
+    const res = await fetch(`/api/extract?url=${encodeURIComponent(url)}`, {
       signal: AbortSignal.timeout(15000),
     });
-    if (res.ok) return await res.text();
-  } catch { /* proxy not available */ }
-
+    if (res.ok) {
+      const data = await res.json();
+      if (data.content) return data;
+    }
+  } catch { /* not available — fall through to client-side */ }
   return null;
 }
 
-/* ======================== Public API ======================== */
+/* ======================== LinkParser — main API ======================== */
 
-/**
- * Parse a URL → { title, content, excerpt }
- */
-export async function parseLink(url) {
-  const urlTrim = url.trim();
-  if (!urlTrim) throw new Error('请输入完整的 URL');
-  try { new URL(urlTrim); }
-  catch { throw new Error('请输入有效的 URL，例如 https://example.com/article'); }
+function parseLink(url) {
+  return (async () => {
+    const urlTrim = (url || '').trim();
+    if (!urlTrim) throw new Error('请输入完整的 URL');
+    try { new URL(urlTrim); }
+    catch { throw new Error('请输入有效的 URL，例如 https://example.com/article'); }
 
-  const html = await fetchHtml(urlTrim);
+    // Try server-side extraction first (jsdom, higher quality)
+    const serverResult = await extractOnServer(urlTrim);
 
-  if (!html) {
-    const host = new URL(urlTrim).hostname;
+    // Fetch HTML
+    const html = await fetchHtml(urlTrim);
+
+    // Meta-info
+    const { title: metaTitle, excerpt: metaExcerpt } = html
+      ? extractMetaTags(html)
+      : { title: new URL(urlTrim).hostname, excerpt: '' };
+
+    // Build content
+    let content = '';
+    let title = metaTitle;
+
+    if (serverResult && serverResult.content) {
+      // Server-side extraction succeeded — highest quality
+      content = serverResult.content;
+      title = serverResult.title || metaTitle;
+
+    } else if (html) {
+      // Client-side heuristic extraction
+      content = textToMarkdown(guessMainContent(html));
+      title = metaTitle;
+
+    } else {
+      // Can't fetch — return helpful fallback
+      return {
+        title: metaTitle || new URL(urlTrim).hostname,
+        content: '',
+        excerpt: `无法抓取页面内容，可能该页面禁止抓取或网络受限。\n\n您可以尝试手动复制文章内容，使用「文本」捕获模式。\n\n链接：${urlTrim}`,
+      };
+    }
+
     return {
-      title: host,
-      content: '',
-      excerpt: `无法抓取页面内容，可能该页面禁止抓取或网络受限。\n\n您可以尝试手动复制文章内容，使用「文本」捕获模式。\n\n链接：${urlTrim}`,
+      title: title || new URL(urlTrim).hostname,
+      content: content.length > 10000 ? content.slice(0, 10000) + '\n\n…[内容过长，已截断]' : content,
+      excerpt: metaExcerpt,
     };
-  }
-
-  return extractContent(html, urlTrim);
+  })();
 }
 
-export { extractContent };
+/* ======================== Exports ======================== */
+
+export { parseLink };
