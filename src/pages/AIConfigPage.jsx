@@ -51,15 +51,19 @@ function AIConfigPage() {
     setExpandedId((prev) => (prev === id ? null : id));
   };
 
-  const handleTest = async (config) => {
-    setTestingId(config.id);
-    setTestStatus((prev) => ({ ...prev, [config.id]: null }));
+  const handleTest = async (id) => {
+    setTestingId(id);
+    setTestStatus((prev) => ({ ...prev, [id]: null }));
     try {
+      // Read live config from store — avoids stale closure values
+      const { configs: currentConfigs } = useAIStore.getState();
+      const config = currentConfigs.find((c) => c.id === id);
+      if (!config) throw new Error('配置不存在');
       const result = await aiService.testConnection(config);
-      setTestStatus((prev) => ({ ...prev, [config.id]: result.success ? 'success' : 'error' }));
+      setTestStatus((prev) => ({ ...prev, [id]: result.success ? 'success' : 'error' }));
       toast.show(result.success ? '连接成功' : `连接失败：${result.message}`, result.success ? 'success' : 'error');
     } catch (err) {
-      setTestStatus((prev) => ({ ...prev, [config.id]: 'error' }));
+      setTestStatus((prev) => ({ ...prev, [id]: 'error' }));
       toast.show('测试失败：' + err.message, 'error');
     } finally {
       setTestingId(null);
@@ -237,7 +241,7 @@ function AIConfigPage() {
                           <NeonButton
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleTest(config)}
+                            onClick={() => handleTest(config.id)}
                             disabled={testingId === config.id}
                           >
                             {testingId === config.id ? (

@@ -31,7 +31,12 @@ const useAIStore = create(
 
       updateConfig: (id, data) => {
         aiConfigRepo.update(Number(id), data);
-        get().loadConfigs();
+        // Optimise: patch store in-memory instead of re-reading entire table
+        set((state) => ({
+          configs: state.configs.map((c) =>
+            c.id === id ? { ...c, ...data } : c
+          ),
+        }));
       },
 
       deleteConfig: (id) => {
