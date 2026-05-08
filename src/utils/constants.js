@@ -98,8 +98,8 @@ export const AI_PROVIDER_CONFIGS = {
   [AI_PROVIDERS.QIANWEN]: {
     name: '通义千问',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    models: ['qwen-vl-max', 'qwen-max', 'qwen-plus'],
-    defaultModel: 'qwen-vl-max',
+    models: ['qwen3.5-flash', 'qwen3.5-turbo', 'qwen3.5-plus', 'qwen-max', 'qwen-vl-max'],
+    defaultModel: 'qwen3.5-flash',
     supportsVision: true,
   },
   [AI_PROVIDERS.KIMI]: {

@@ -94,7 +94,7 @@ function AppInitializer({ children }) {
           aiConfigRepo.create({
             provider: 'qianwen',
             name: '通义千问 Debug',
-            apiKey: 'sk-0580391084fc4487bb91c49ebd03dddc',
+            apiKey: '',
             baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
             model: 'qwen3.5-flash',
             temperature: 0.7,
