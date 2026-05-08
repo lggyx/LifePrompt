@@ -29,7 +29,7 @@ import { springs } from '../utils/animations';
 import useAIStore from '../stores/useAIStore';
 import useArticleStore from '../stores/useArticleStore';
 import { useToastStore } from '../stores/useToastStore';
-import { CAPTURE_TYPE } from '../services/capture/index';
+import { CAPTURE_TYPE } from '../services/capture/constants';
 
 /* ======================== MODE CARDS ======================== */
 
